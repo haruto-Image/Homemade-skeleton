@@ -190,6 +190,7 @@ class DWPoseRunner:
 
     # DWPoseRunner クラスの中
     def infer_keypoints133(self, img_bgr, box):
+        h,w = img_bgr.shape[:2]
         # ...（前処理と推論の部分は、これまで通りで変更なし）...
         img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
         out_bbox = [np.array(box)]
@@ -225,6 +226,9 @@ class DWPoseRunner:
             scores = scores[:, np.newaxis]
         
         keypoints_info = np.concatenate((keypoints, scores), axis=1)
+        #正規化処理
+        keypoints_info[:, 0] /= w
+        keypoints_info[:, 1] /= h
 
         return keypoints_info.astype(np.float32)
 
@@ -232,25 +236,25 @@ class DWPoseRunner:
 # 133点 → Body25風 & 可視化
 # --------------------
 
-# OpenPose Body25の標準的な接続順
-EDGES = [
-    # 顔
-    (0, 1), (0, 2), (1, 3), (2, 4), (0, 17),
-    # 体幹
-    (17, 5), (17, 6), (5, 7), (6, 8), (7, 9), (8, 10), (5, 11), (6, 12), (11, 12),
-    # 脚
-    (11, 13), (12, 14), (13, 15), (14, 16)
-]
+# # OpenPose Body25の標準的な接続順
+# EDGES = [
+#     # 顔
+#     (0, 1), (0, 2), (1, 3), (2, 4), (0, 17),
+#     # 体幹
+#     (17, 5), (17, 6), (5, 7), (6, 8), (7, 9), (8, 10), (5, 11), (6, 12), (11, 12),
+#     # 脚
+#     (11, 13), (12, 14), (13, 15), (14, 16)
+# ]
 
-def draw_skeleton(canvas, kps25, edges=EDGES, thr=0.01):
-    drawn = 0
-    for a,b in edges:
-        pa, pb = kps25[a], kps25[b]
-        if pa[2] > thr and pb[2] > thr:
-            cv2.line(canvas, tuple(pa[:2].astype(int)), tuple(pb[:2].astype(int)), (255,255,255), 2)
-        for p in kps25:
-            cv2.circle(canvas, tuple(p[:2].astype(int)), 2, (0,0,255), -1)
-    return canvas
+# def draw_skeleton(canvas, kps25, edges=EDGES, thr=0.01):
+#     drawn = 0
+#     for a,b in edges:
+#         pa, pb = kps25[a], kps25[b]
+#         if pa[2] > thr and pb[2] > thr:
+#             cv2.line(canvas, tuple(pa[:2].astype(int)), tuple(pb[:2].astype(int)), (255,255,255), 2)
+#         for p in kps25:
+#             cv2.circle(canvas, tuple(p[:2].astype(int)), 2, (0,0,255), -1)
+#     return canvas
 
 
 # --------------------
@@ -259,7 +263,7 @@ def draw_skeleton(canvas, kps25, edges=EDGES, thr=0.01):
 def main():
     ap = argparse.ArgumentParser()
     # 既定パス（必要に応じて書き換え）
-    ap.add_argument("--video", default=r"C:\Users\_s2520798\Documents\1.研究\入出力映像\input\0908(お手本動画の画質検証)\800_1200\Mino_leg_shorts.mp4")
+    ap.add_argument("--video", default=r"C:\Users\_s2520798\Documents\1.研究\入出力映像\input\0908(お手本動画の画質検証)\800_1200\exercise6.mp4")
     ap.add_argument("--det",   default=r"C:\Users\_s2520798\Documents\1.研究\動画編集python\models\yolox_l.onnx")
     ap.add_argument("--pose",  default=r"C:\Users\_s2520798\Documents\1.研究\動画編集python\models\dw-ll_ucoco_384.onnx")
 

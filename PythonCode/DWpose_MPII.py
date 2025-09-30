@@ -259,7 +259,7 @@ def draw_skeleton(canvas, kps25, edges=EDGES, thr=0.01):
 def main():
     ap = argparse.ArgumentParser()
     # 既定パス（必要に応じて書き換え）
-    ap.add_argument("--video", default=r"C:\Users\_s2520798\Documents\1.研究\入出力映像\output\0817[三野さん動画]\Mino_768_768_24.mp4")
+    ap.add_argument("--video", default=r"C:\Users\_s2520798\Documents\1.研究\入出力映像\output\0817[三野さん動画]\test.mp4")
     ap.add_argument("--det",   default=r"C:\Users\_s2520798\Documents\1.研究\動画編集python\models\yolox_l.onnx")
     ap.add_argument("--pose",  default=r"C:\Users\_s2520798\Documents\1.研究\動画編集python\models\dw-ll_ucoco_384.onnx")
 
