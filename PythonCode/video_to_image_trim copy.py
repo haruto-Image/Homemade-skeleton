@@ -5,19 +5,19 @@ from PIL import Image
 # --- 設定項目 ---
 
 # 1. 入力する動画ファイルのパス
-input_video_path = Path(r"C:\Users\_s2520798\Documents\1.研究\入出力映像\input\0817[三野さん動画]\IMG_0085.MOV")
+input_video_path = Path(r"C:\Users\_s2520798\Documents\1.研究\入出力映像\input\1003\植田部長.MOV")
 
 # 2. 画像として保存する際の出力パス
-output_image_path = Path(r"C:\Users\_s2520798\Documents\1.研究\入出力映像\input\0908(お手本動画の画質検証)\800_1200\0919Mino.jpg")
+output_image_path = Path(r"C:\Users\_s2520798\Documents\1.研究\入出力映像\output\1003\UedaB.jpg")
 
 # 3. 切り出したいフレームの番号 (例: 300フレーム目)
-TARGET_FRAME_NUMBER = 2760
+TARGET_FRAME_NUMBER = 4680
 
 # 4. 出力画像の目標サイズ (幅 と 高さ)
 TW, TH = 800, 1200
 
 # 5. ズーム倍率 (1.0以上を推奨)
-zoom = 2.1
+zoom = 2.3
 
 # --- ここから処理 ---
 
@@ -55,9 +55,9 @@ else:
             resized = img.resize((int(W * s), int(H * s)), Image.LANCZOS)
 
             # 中央で 800x1200 にトリム
-            x1 = (resized.width - TW) // 2 -10
+            x1 = (resized.width - TW) // 2 -100
             # y1の "+ 20" は、トリミング位置を少し下にずらす処理です（元のコードから維持）
-            y1 = (resized.height - TH) // 2 + 20 
+            y1 = (resized.height - TH) // 2 - 50
             out = resized.crop((x1, y1, x1 + TW, y1 + TH))
             
             # 結果を保存

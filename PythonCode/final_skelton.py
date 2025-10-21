@@ -13,6 +13,9 @@ from draw_skeleton_hybrid_test import draw_skeleton_hybrid
 from OneEuroFilter import OneEuroFilter
 #from dwpose_core import DWPoseCore
 
+import matplotlib.pyplot as plt
+import pandas as pd
+
 # --------------------
 # ユーティリティ
 # --------------------
@@ -263,7 +266,7 @@ class DWPoseRunner:
 def main():
     ap = argparse.ArgumentParser()
     # 既定パス（必要に応じて書き換え）
-    ap.add_argument("--video", default=r"C:\Users\_s2520798\Documents\1.研究\入出力映像\input\0908(お手本動画の画質検証)\800_1200\exercise6.mp4")
+    ap.add_argument("--video", default=r"C:\Users\_s2520798\Documents\1.研究\入出力映像\input\1.お手本エクササイズ動画\exercise10.mp4")
     ap.add_argument("--det",   default=r"C:\Users\_s2520798\Documents\1.研究\動画編集python\models\yolox_l.onnx")
     ap.add_argument("--pose",  default=r"C:\Users\_s2520798\Documents\1.研究\動画編集python\models\dw-ll_ucoco_384.onnx")
 
@@ -282,8 +285,8 @@ def main():
     ap.add_argument("--every", type=int,   default=1,    help="何フレームごとに処理するか（間引き）")
 
     # スムージング処理の追加
-    ap.add_argument("--mincutoff", type=float, default=0.0005, help="OneEuroFilter: mincutoff (小さいほど強く平滑化)")
-    ap.add_argument("--beta",       type=float, default=0.7,   help="OneEuroFilter: beta (大きいほど高速な動きに追従)")
+    ap.add_argument("--mincutoff", type=float, default=0.5, help="OneEuroFilter: mincutoff (小さいほど強く平滑化)")
+    ap.add_argument("--beta",       type=float, default=1,   help="OneEuroFilter: beta (大きいほど高速な動きに追従)")
 
 
     args = ap.parse_args()  #この設定以降args.outのようにするだけでパスを呼び出せる
@@ -314,6 +317,8 @@ def main():
     if not vw.isOpened():
         raise RuntimeError(f"VideoWriterを開けません: {out_video_path}")
     
+    all_keypoints_history = []
+
     num_keypoints = 133
     filters_xy = [
         [OneEuroFilter(freq=fps_in, mincutoff=args.mincutoff, beta=args.beta), # x用フィルター
