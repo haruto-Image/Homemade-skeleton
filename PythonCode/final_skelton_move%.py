@@ -266,12 +266,12 @@ class DWPoseRunner:
 def main():
     ap = argparse.ArgumentParser()
     # 既定パス（必要に応じて書き換え）
-    ap.add_argument("--video", default=r"C:\Users\_s2520798\Documents\1.研究\入出力映像\output\1003\三野_自作骨格_スクワット.mp4")
+    ap.add_argument("--video", default=r"C:\Users\_s2520798\Documents\1.研究\入出力映像\1.お手本エクササイズ動画\Mino_leg_shorts.mp4")
     ap.add_argument("--det",   default=r"C:\Users\_s2520798\Documents\1.研究\動画編集python\models\yolox_l.onnx")
     ap.add_argument("--pose",  default=r"C:\Users\_s2520798\Documents\1.研究\動画編集python\models\dw-ll_ucoco_384.onnx")
 
     # 出力先
-    ap.add_argument("--out",       default=r"C:\Users\_s2520798\Documents", help="PNG/動画の出力フォルダ")
+    ap.add_argument("--out",       default=r"C:\Users\_s2520798\Documents\1.研究\入出力映像", help="PNG/動画の出力フォルダ")
     ap.add_argument("--out_video", default=None, help="出力動画のフルパス（未指定なら out/pose_out1.mp4）")
 
     # 表示・保存オプション ←★これが無いと AttributeError
@@ -288,10 +288,10 @@ def main():
     ap.add_argument("--mincutoff", type=float, default=0.5, help="OneEuroFilter: mincutoff (小さいほど強く平滑化)")
     ap.add_argument("--beta",       type=float, default=1,   help="OneEuroFilter: beta (大きいほど高速な動きに追従)")
 
-    #csvで出力するフォルダ先
-    # ap.add_argument("--out", default=r"C:\Users\_s2520798\Documents", help="C:\Users\_s2520798\Documents\1.研究\入出力映像\output\1003")
-    # ap.add_argument("--save_csv", default=None, help="C:\Users\_s2520798\Documents\1.研究\入出力映像\output\1003\キーポイント座標データ")
-
+    #参照するキーポイントとcsv出力に関する処理
+    target_kp_id = 10
+    ap.add_argument("--plot_kp_id", type=int, default=target_kp_id, help="処理終了後に描画する単一グラフのキーポイントID (デフォルト: 10)")
+    ap.add_argument("--save_csv", default=None, help="キーポイント座標(CSV)の出力パス。未指定なら動画名ベースで自動生成。")
 
     args = ap.parse_args()  #この設定以降args.outのようにするだけでパスを呼び出せる
 
@@ -373,6 +373,7 @@ def main():
             continue
 
         smoothed_keypoints = np.zeros_like(keypoints_info)
+        current_frame_keypoints = []
 
         for kp_idx in range(num_keypoints):
             # 元の座標と信頼度を取得
@@ -386,10 +387,13 @@ def main():
             # 平滑化した座標と元の信頼度を格納
             smoothed_keypoints[kp_idx] = [smoothed_x, smoothed_y, conf]
 
-            #キーポイントデータを配列に格納
-            for kp_idx,(x,y,conf) in enumerate(smoothed_keypoints):
-                all_keypoints_history.append([i,kp_idx,x,y,conf])
+            # CSV保存用のデータ蓄積
+            current_frame_keypoints.append([i, kp_idx, smoothed_x, smoothed_y, conf])
 
+            # #キーポイントデータを配列に格納
+            # for kp_idx,(x,y,conf) in enumerate(smoothed_keypoints):
+            #     all_keypoints_history.append([i,kp_idx,x,y,conf])
+        all_keypoints_history.extend(current_frame_keypoints)
         # 3) 骨格の描画
         canvas = draw_skeleton_hybrid(canvas, smoothed_keypoints, conf_threshold=0.3)
 
@@ -403,20 +407,56 @@ def main():
     print(f"完了しました。動画を {out_video_path} に保存しました。")
     print(f"処理フレーム数: {saved} (出力FPS={fps_out})")
 
-    ##蓄積した全データを使ってグラフを描画
-    print("キーポイント座標のグラフを作成する")
-    df = pd.DataFrame(all_keypoints_history,columns=['frame','kp_id','x','y','conf'])
+    # --- CSV保存処理 ---
+    if not all_keypoints_history:
+        print("キーポイントデータが収集されなかったため、CSV保存とグラフ作成をスキップします。")
+    else:
+        print("キーポイントデータをCSVに保存します...")
+        df = pd.DataFrame(all_keypoints_history, columns=['frame', 'kp_id', 'x', 'y', 'conf'])
+        
+        if args.save_csv:
+            # 引数で指定されたパスを使用
+            csv_path = Path(args.save_csv)
+        else:
+            # デフォルトのCSVパスを生成 (入力動画名 + _keypoints.csv)
+            video_stem = Path(args.video).stem
+            csv_path = out_dir / f"{video_stem}_keypoints_{target_kp_id}.csv"
+            
+        try:
+            # CSV保存先フォルダがなければ作成
+            csv_path.parent.mkdir(parents=True, exist_ok=True)
+            df.to_csv(csv_path, index=False)
+            print(f"キーポイントデータを {csv_path.resolve()} に保存しました。")
+        except Exception as e:
+            print(f"エラー: CSVファイルの保存に失敗しました: {e}")
+            print(f"対象パス: {csv_path}")
 
-    target_kp_id = 10
-    kp_data = df[df['kp_id'] == target_kp_id]
+        # # --- 単一グラフ描画処理 ---
+        # print("キーポイント座標のグラフを作成する")
+        
+        # target_kp_id = args.plot_kp_id
+        # kp_data = df[df['kp_id'] == target_kp_id]
 
-    if not kp_data.empty:
-        plt.figure(figsize = (15,7))
-        plt.plot(kp_data['frame'][::10],kp_data['x'][::10],linestyle='none',marker='.',label = 'X coordinate')
-        plt.plot(kp_data['frame'][::10], kp_data['y'][::10], linestyle='none',marker='x',label='Y coordinate')
-        graph_path = out_dir / f'keypoint_graph_id{target_kp_id}.png'
-        plt.savefig(graph_path)
-        print(f"グラフを{graph_path}に保存しました")
+        # if not kp_data.empty:
+        #     plt.figure(figsize = (15,7))
+        #     # 10フレームごとにサンプリングしてプロット (データが多すぎると重いため)
+        #     sample_rate = 10
+        #     if len(kp_data) < 100:
+        #         sample_rate = 1
+
+        #     plt.plot(kp_data['frame'][::sample_rate],kp_data['x'][::sample_rate],linestyle='none',marker='.',label = 'X coordinate')
+        #     plt.plot(kp_data['frame'][::sample_rate], kp_data['y'][::sample_rate], linestyle='none',marker='x',label='Y coordinate')
+        #     plt.xlabel('Frame')
+        #     plt.ylabel('Coordinate (normalized)')
+        #     plt.legend()
+        #     plt.grid(True)
+            
+        #     # 保存先をCSVと同じフォルダ階層にする
+        #     graph_path = csv_path.parent / f'{csv_path.stem}_graph_id{target_kp_id}.png'
+        #     plt.savefig(graph_path)
+        #     print(f"グラフを{graph_path}に保存しました")
+        # else:
+        #     print(f"ID {target_kp_id} のデータが見つからなかったため、単一グラフはスキップされました。")
     
     # フォルダ/ファイルを開く（Windows）
     try:
