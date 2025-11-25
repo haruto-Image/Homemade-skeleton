@@ -9,10 +9,12 @@ import onnxruntime as ort
 import comfy_dwpose_core as DWPoseCore
 # 同じフォルダにあるutil.pyから機能を読み込む
 from typing import Tuple, List
-#from draw_skeleton_hybrid import draw_skeleton_hybrid #ベクトルにして情報反映する前の関数呼び出し
-from draw_skeleton_hybrid_COCOv2_23 import create_coco17_stabilized, draw_coco17
+from draw_skeleton_hybrid_test import draw_skeleton_hybrid
 from OneEuroFilter import OneEuroFilter
 #from dwpose_core import DWPoseCore
+
+import matplotlib.pyplot as plt
+import pandas as pd
 
 # --------------------
 # ユーティリティ
@@ -191,6 +193,7 @@ class DWPoseRunner:
 
     # DWPoseRunner クラスの中
     def infer_keypoints133(self, img_bgr, box):
+        h,w = img_bgr.shape[:2]
         # ...（前処理と推論の部分は、これまで通りで変更なし）...
         img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
         out_bbox = [np.array(box)]
@@ -226,6 +229,9 @@ class DWPoseRunner:
             scores = scores[:, np.newaxis]
         
         keypoints_info = np.concatenate((keypoints, scores), axis=1)
+        #正規化処理
+        keypoints_info[:, 0] /= w
+        keypoints_info[:, 1] /= h
 
         return keypoints_info.astype(np.float32)
 
@@ -233,25 +239,25 @@ class DWPoseRunner:
 # 133点 → Body25風 & 可視化
 # --------------------
 
-# OpenPose Body25の標準的な接続順
-EDGES = [
-    # 顔
-    (0, 1), (0, 2), (1, 3), (2, 4), (0, 17),
-    # 体幹
-    (17, 5), (17, 6), (5, 7), (6, 8), (7, 9), (8, 10), (5, 11), (6, 12), (11, 12),
-    # 脚
-    (11, 13), (12, 14), (13, 15), (14, 16)
-]
+# # OpenPose Body25の標準的な接続順
+# EDGES = [
+#     # 顔
+#     (0, 1), (0, 2), (1, 3), (2, 4), (0, 17),
+#     # 体幹
+#     (17, 5), (17, 6), (5, 7), (6, 8), (7, 9), (8, 10), (5, 11), (6, 12), (11, 12),
+#     # 脚
+#     (11, 13), (12, 14), (13, 15), (14, 16)
+# ]
 
-def draw_skeleton(canvas, kps25, edges=EDGES, thr=0.01):
-    drawn = 0
-    for a,b in edges:
-        pa, pb = kps25[a], kps25[b]
-        if pa[2] > thr and pb[2] > thr:
-            cv2.line(canvas, tuple(pa[:2].astype(int)), tuple(pb[:2].astype(int)), (255,255,255), 2)
-        for p in kps25:
-            cv2.circle(canvas, tuple(p[:2].astype(int)), 2, (0,0,255), -1)
-    return canvas
+# def draw_skeleton(canvas, kps25, edges=EDGES, thr=0.01):
+#     drawn = 0
+#     for a,b in edges:
+#         pa, pb = kps25[a], kps25[b]
+#         if pa[2] > thr and pb[2] > thr:
+#             cv2.line(canvas, tuple(pa[:2].astype(int)), tuple(pb[:2].astype(int)), (255,255,255), 2)
+#         for p in kps25:
+#             cv2.circle(canvas, tuple(p[:2].astype(int)), 2, (0,0,255), -1)
+#     return canvas
 
 
 # --------------------
@@ -260,12 +266,12 @@ def draw_skeleton(canvas, kps25, edges=EDGES, thr=0.01):
 def main():
     ap = argparse.ArgumentParser()
     # 既定パス（必要に応じて書き換え）
-    ap.add_argument("--video", default=r"C:\Users\_s2520798\Documents\1.研究\入出力映像\output\0817[三野さん動画]\test.mp4")
+    ap.add_argument("--video", default=r"C:\Users\_s2520798\Documents\1.研究\入出力映像\お手本_元動画\Mino_legs_fix.mp4")
     ap.add_argument("--det",   default=r"C:\Users\_s2520798\Documents\1.研究\動画編集python\models\yolox_l.onnx")
     ap.add_argument("--pose",  default=r"C:\Users\_s2520798\Documents\1.研究\動画編集python\models\dw-ll_ucoco_384.onnx")
 
     # 出力先
-    ap.add_argument("--out",       default=r"C:\Users\_s2520798\Documents", help="PNG/動画の出力フォルダ")
+    ap.add_argument("--out",       default=r"C:\Users\_s2520798\Documents\1.研究\入出力映像", help="PNG/動画の出力フォルダ")
     ap.add_argument("--out_video", default=None, help="出力動画のフルパス（未指定なら out/pose_out1.mp4）")
 
     # 表示・保存オプション ←★これが無いと AttributeError
@@ -279,8 +285,13 @@ def main():
     ap.add_argument("--every", type=int,   default=1,    help="何フレームごとに処理するか（間引き）")
 
     # スムージング処理の追加
-    ap.add_argument("--mincutoff", type=float, default=0.004, help="OneEuroFilter: mincutoff (小さいほど強く平滑化)")
-    ap.add_argument("--beta",       type=float, default=0.7,   help="OneEuroFilter: beta (大きいほど高速な動きに追従)")
+    ap.add_argument("--mincutoff", type=float, default=0.5, help="OneEuroFilter: mincutoff (小さいほど強く平滑化)")
+    ap.add_argument("--beta",       type=float, default=1,   help="OneEuroFilter: beta (大きいほど高速な動きに追従)")
+
+    #参照するキーポイントとcsv出力に関する処理
+    target_kp_id = 10
+    ap.add_argument("--plot_kp_id", type=int, default=target_kp_id, help="処理終了後に描画する単一グラフのキーポイントID (デフォルト: 10)")
+    ap.add_argument("--save_csv", default=None, help="キーポイント座標(CSV)の出力パス。未指定なら動画名ベースで自動生成。")
 
     args = ap.parse_args()  #この設定以降args.outのようにするだけでパスを呼び出せる
 
@@ -310,6 +321,9 @@ def main():
     if not vw.isOpened():
         raise RuntimeError(f"VideoWriterを開けません: {out_video_path}")
     
+    all_keypoints_history = []
+    
+
     num_keypoints = 133
     filters_xy = [
         [OneEuroFilter(freq=fps_in, mincutoff=args.mincutoff, beta=args.beta), # x用フィルター
@@ -355,14 +369,11 @@ def main():
         
         if keypoints_info is None:
             print("キーポイントの検出に失敗しました。このフレームをスキップします。")
-            vw.write(canvas)
             i += 1
-            saved += 1
             continue
 
-        # --- キーポイントのスムージング処理 --- # ← 追加
-        timestamp = i / fps_in # タイムスタンプを計算
         smoothed_keypoints = np.zeros_like(keypoints_info)
+        current_frame_keypoints = []
 
         for kp_idx in range(num_keypoints):
             # 元の座標と信頼度を取得
@@ -376,17 +387,18 @@ def main():
             # 平滑化した座標と元の信頼度を格納
             smoothed_keypoints[kp_idx] = [smoothed_x, smoothed_y, conf]
 
-        coco_17_kps = create_coco17_stabilized(smoothed_keypoints)
-        # 描画には平滑化したキーポイントを使用する
-        # この一行を呼び出しの直前に追加してください
-        canvas = np.zeros((h, w, 3), dtype=np.uint8) # 黒背景に描画
-        canvas_with_skeleton = draw_coco17(canvas, coco_17_kps)
+            # CSV保存用のデータ蓄積
+            current_frame_keypoints.append([i, kp_idx, smoothed_x, smoothed_y, conf])
 
+            # #キーポイントデータを配列に格納
+            # for kp_idx,(x,y,conf) in enumerate(smoothed_keypoints):
+            #     all_keypoints_history.append([i,kp_idx,x,y,conf])
+        all_keypoints_history.extend(current_frame_keypoints)
         # 3) 骨格の描画
-        #anvas = draw_skeleton_hybrid(canvas, keypoints_info, conf_threshold=0.3)
+        canvas = draw_skeleton_hybrid(canvas, smoothed_keypoints, conf_threshold=0.3)
 
         # 4) 動画に書き込み
-        vw.write(canvas_with_skeleton)
+        vw.write(canvas)
         saved += 1
         i += 1
         print(f"フレーム {i-1} を処理しました。")
@@ -394,6 +406,57 @@ def main():
     vw.release()
     print(f"完了しました。動画を {out_video_path} に保存しました。")
     print(f"処理フレーム数: {saved} (出力FPS={fps_out})")
+
+    # --- CSV保存処理 ---
+    if not all_keypoints_history:
+        print("キーポイントデータが収集されなかったため、CSV保存とグラフ作成をスキップします。")
+    else:
+        print("キーポイントデータをCSVに保存します...")
+        df = pd.DataFrame(all_keypoints_history, columns=['frame', 'kp_id', 'x', 'y', 'conf'])
+        
+        if args.save_csv:
+            # 引数で指定されたパスを使用
+            csv_path = Path(args.save_csv)
+        else:
+            # デフォルトのCSVパスを生成 (入力動画名 + _keypoints.csv)
+            video_stem = Path(args.video).stem
+            csv_path = out_dir / f"{video_stem}_keypoints_{target_kp_id}.csv"
+            
+        try:
+            # CSV保存先フォルダがなければ作成
+            csv_path.parent.mkdir(parents=True, exist_ok=True)
+            df.to_csv(csv_path, index=False)
+            print(f"キーポイントデータを {csv_path.resolve()} に保存しました。")
+        except Exception as e:
+            print(f"エラー: CSVファイルの保存に失敗しました: {e}")
+            print(f"対象パス: {csv_path}")
+
+        # # --- 単一グラフ描画処理 ---
+        # print("キーポイント座標のグラフを作成する")
+        
+        # target_kp_id = args.plot_kp_id
+        # kp_data = df[df['kp_id'] == target_kp_id]
+
+        # if not kp_data.empty:
+        #     plt.figure(figsize = (15,7))
+        #     # 10フレームごとにサンプリングしてプロット (データが多すぎると重いため)
+        #     sample_rate = 10
+        #     if len(kp_data) < 100:
+        #         sample_rate = 1
+
+        #     plt.plot(kp_data['frame'][::sample_rate],kp_data['x'][::sample_rate],linestyle='none',marker='.',label = 'X coordinate')
+        #     plt.plot(kp_data['frame'][::sample_rate], kp_data['y'][::sample_rate], linestyle='none',marker='x',label='Y coordinate')
+        #     plt.xlabel('Frame')
+        #     plt.ylabel('Coordinate (normalized)')
+        #     plt.legend()
+        #     plt.grid(True)
+            
+        #     # 保存先をCSVと同じフォルダ階層にする
+        #     graph_path = csv_path.parent / f'{csv_path.stem}_graph_id{target_kp_id}.png'
+        #     plt.savefig(graph_path)
+        #     print(f"グラフを{graph_path}に保存しました")
+        # else:
+        #     print(f"ID {target_kp_id} のデータが見つからなかったため、単一グラフはスキップされました。")
     
     # フォルダ/ファイルを開く（Windows）
     try:
