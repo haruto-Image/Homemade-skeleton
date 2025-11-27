@@ -235,29 +235,46 @@ class DWPoseRunner:
 
         return keypoints_info.astype(np.float32)
 
-# --------------------
-# 133点 → Body25風 & 可視化
-# --------------------
+def get_eye_center(keypoints, indices):
+    points = keypoints[indices, :2]
 
-# # OpenPose Body25の標準的な接続順
-# EDGES = [
-#     # 顔
-#     (0, 1), (0, 2), (1, 3), (2, 4), (0, 17),
-#     # 体幹
-#     (17, 5), (17, 6), (5, 7), (6, 8), (7, 9), (8, 10), (5, 11), (6, 12), (11, 12),
-#     # 脚
-#     (11, 13), (12, 14), (13, 15), (14, 16)
-# ]
+    valid_points = points[keypoints[indices, 2] > 0]
+    
+    if len(valid_points) == 0:
+        return None
+    np.mean(valid_points, axis=0)
 
-# def draw_skeleton(canvas, kps25, edges=EDGES, thr=0.01):
-#     drawn = 0
-#     for a,b in edges:
-#         pa, pb = kps25[a], kps25[b]
-#         if pa[2] > thr and pb[2] > thr:
-#             cv2.line(canvas, tuple(pa[:2].astype(int)), tuple(pb[:2].astype(int)), (255,255,255), 2)
-#         for p in kps25:
-#             cv2.circle(canvas, tuple(p[:2].astype(int)), 2, (0,0,255), -1)
-#     return canvas
+    return
+
+def swap_face_geometry(ref_kps, target_kps):
+    L_EYE_IDXS = list(range(45,51))
+    R_EYE_IDXS = list(range(51,57))
+    FACE_IDXS = list(range(23,91))
+
+    #基準点(目の中心)を取得する
+    ref_l = get_eye_center(ref_kps, L_EYE_IDXS)
+    ref_r = get_eye_center(ref_kps, R_EYE_IDXS) #生徒の左目と右目の中心を出す
+    target_l = get_eye_center(target_kps,L_EYE_IDXS)
+    target_r = get_eye_center(target_kps,R_EYE_IDXS) #先生の左目と右目の中心
+
+    if any(x is Nonse for x in[ref_l,ref_r,target_l,target_r]):
+        return target_kps
+    
+    src_pts = np.array([ref_l,ref_r], dtype = np.float32)
+    dst_pts = np.array([target_l,target_r], dtype = np.float32) #PythonのリストからC++で作られたアフィン変換の関数で使用できるfloat型に渡せるようにデータを並べなおしている
+
+    M,_ = cv2.estimateAffinePartial2D(src_pts.reshape(1,-1,2), dst_pts.reshape(1,-1,2)) #アフィン変換行列を求める
+
+    if M is Nonse: return target_kps
+
+    ref_face_kps = ref_kps[FACE_IDXS,:2]
+    transformed_pts = cv2.transform(ref_face_kps.reshape(-1,1,2),M)
+    transformed_pts = transformed_pts.reshape(-1,2)
+
+    new_kps = target_kps.copy()
+    new_kps[Face_INDX,:2] = transformed_pts
+
+    return new_kps
 
 
 # --------------------
@@ -266,12 +283,16 @@ class DWPoseRunner:
 def main():
     ap = argparse.ArgumentParser()
     # 既定パス（必要に応じて書き換え）
-    ap.add_argument("--video", default=r"C:\Users\_s2520798\Documents\1.研究\入出力映像\input\1.お手本エクササイズ動画\1027.mp4")
-    ap.add_argument("--det",   default=r"C:\Users\_s2520798\Documents\1.研究\動画編集python\models\yolox_l.onnx")
-    ap.add_argument("--pose",  default=r"C:\Users\_s2520798\Documents\1.研究\動画編集python\models\dw-ll_ucoco_384.onnx")
+    # ap.add_argument("--video", default=r"C:\Users\_s2520798\Documents\1.研究\入出力映像\input\1.お手本エクササイズ動画\1027.mp4")
+    # ap.add_argument("--det",   default=r"C:\Users\_s2520798\Documents\1.研究\動画編集python\models\yolox_l.onnx")
+    # ap.add_argument("--pose",  default=r"C:\Users\_s2520798\Documents\1.研究\動画編集python\models\dw-ll_ucoco_384.onnx")
+
+    ap.add_argument("--video", default=r"C:\Users\tomoh\Documents\2.筑波M1\1.研究\1.研究の出力結果\Mino_10.mp4")
+    ap.add_argument("--det",   default=r"C:\Users\tomoh\Documents\2.筑波M1\1.研究\Homemade-skeleton\models\yolox_l.onnx")
+    ap.add_argument("--pose",  default=r"C:\Users\tomoh\Documents\2.筑波M1\1.研究\Homemade-skeleton\models\dw-ll_ucoco_384.onnx")
 
     # 出力先
-    ap.add_argument("--out",       default=r"C:\Users\_s2520798\Documents", help="PNG/動画の出力フォルダ")
+    ap.add_argument("--out",       default=r"C:\Users\tomoh\Documents\2.筑波M1\1.研究\1.研究の出力結果", help="PNG/動画の出力フォルダ")
     ap.add_argument("--out_video", default=None, help="出力動画のフルパス（未指定なら out/pose_out1.mp4）")
 
     # 表示・保存オプション ←★これが無いと AttributeError
@@ -288,6 +309,10 @@ def main():
     ap.add_argument("--mincutoff", type=float, default=0.5, help="OneEuroFilter: mincutoff (小さいほど強く平滑化)")
     ap.add_argument("--beta",       type=float, default=1,   help="OneEuroFilter: beta (大きいほど高速な動きに追従)")
 
+    # 生徒画像のパス
+    ap.add_argument("--student",  default=r"C:\Users\tomoh\Documents\2.筑波M1\1.研究\1.研究の出力結果\UedaB_W2.png", help="生徒画像のパス")
+
+
 
     args = ap.parse_args()  #この設定以降args.outのようにするだけでパスを呼び出せる
 
@@ -298,6 +323,28 @@ def main():
     # 人物検出と姿勢推定を行うクラスのインスタンスを生成（ループの前に一度だけ）
     det = YOLOXDetector(args.det, providers)
     pose = DWPoseRunner(args.pose, providers) # poseもここで準備する
+
+    #生徒画像の読み込み
+    ref_keypoints = None #最終結果を入れる変数の初期化
+
+    if os.path.exists(args.student):
+        student_img = cv2.imread(args.student)
+
+        if student_img is not None:
+            s_boxes, s_scores = det.infer_person_boxes(student_img,conf_thr=args.conf,iou_thr=args.iou)
+
+            if len(s_box) > 0:
+                s_areas = (s_boc[:,2] - s_boxes[:,0]) * (s_boxes[:,3] - s_boxes[:,1])
+                s_best_idx = np.argmax(s_areas)
+                s_box = s_boxes[s_best_idx]
+                ref_keypoints = pose.infer_keypoints133(student_img,s_box)
+
+                print("生徒の比率データを獲得した！")
+            else:
+                print("生徒画像から人物は見つかりませんでした")
+
+
+
 
     # 動画の読み込み
     cap = cv2.VideoCapture(args.video)
@@ -381,8 +428,12 @@ def main():
             # 平滑化した座標と元の信頼度を格納
             smoothed_keypoints[kp_idx] = [smoothed_x, smoothed_y, conf]
 
+        mixed_keypoints = smoothed_keypoints.copy()
+        if ref_keypoints is not Nonse:
+            mixed_keypoints = swap_face_geometry(ref_keypoints,smoothed_keypoints)
+
         # 3) 骨格の描画
-        canvas = draw_skeleton_hybrid(canvas, smoothed_keypoints, conf_threshold=0.3)
+        canvas = draw_skeleton_hybrid(canvas, mixed_keypoints, conf_threshold=0.3)
 
         # 4) 動画に書き込み
         vw.write(canvas)
