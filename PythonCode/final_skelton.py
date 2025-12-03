@@ -242,9 +242,9 @@ def get_eye_center(keypoints, indices):
     
     if len(valid_points) == 0:
         return None
-    np.mean(valid_points, axis=0)
+    return np.mean(valid_points, axis=0)
 
-    return
+    
 
 def swap_face_geometry(ref_kps, target_kps):
     L_EYE_IDXS = list(range(45,51))
@@ -257,7 +257,7 @@ def swap_face_geometry(ref_kps, target_kps):
     target_l = get_eye_center(target_kps,L_EYE_IDXS)
     target_r = get_eye_center(target_kps,R_EYE_IDXS) #先生の左目と右目の中心
 
-    if any(x is Nonse for x in[ref_l,ref_r,target_l,target_r]):
+    if any(x is None for x in[ref_l,ref_r,target_l,target_r]):
         return target_kps
     
     src_pts = np.array([ref_l,ref_r], dtype = np.float32)
@@ -265,14 +265,14 @@ def swap_face_geometry(ref_kps, target_kps):
 
     M,_ = cv2.estimateAffinePartial2D(src_pts.reshape(1,-1,2), dst_pts.reshape(1,-1,2)) #アフィン変換行列を求める
 
-    if M is Nonse: return target_kps
+    if M is None: return target_kps
 
     ref_face_kps = ref_kps[FACE_IDXS,:2]
     transformed_pts = cv2.transform(ref_face_kps.reshape(-1,1,2),M)
     transformed_pts = transformed_pts.reshape(-1,2)
 
     new_kps = target_kps.copy()
-    new_kps[Face_INDX,:2] = transformed_pts
+    new_kps[FACE_IDXS,:2] = transformed_pts
 
     return new_kps
 
@@ -287,12 +287,12 @@ def main():
     # ap.add_argument("--det",   default=r"C:\Users\_s2520798\Documents\1.研究\動画編集python\models\yolox_l.onnx")
     # ap.add_argument("--pose",  default=r"C:\Users\_s2520798\Documents\1.研究\動画編集python\models\dw-ll_ucoco_384.onnx")
 
-    ap.add_argument("--video", default=r"C:\Users\tomoh\Documents\2.筑波M1\1.研究\1.研究の出力結果\Mino_10.mp4")
-    ap.add_argument("--det",   default=r"C:\Users\tomoh\Documents\2.筑波M1\1.研究\Homemade-skeleton\models\yolox_l.onnx")
-    ap.add_argument("--pose",  default=r"C:\Users\tomoh\Documents\2.筑波M1\1.研究\Homemade-skeleton\models\dw-ll_ucoco_384.onnx")
+    ap.add_argument("--video", default=r"C:\Users\_s2520798\Documents\1.研究\入出力映像\お手本_元動画\exercise10.mp4")
+    ap.add_argument("--det",   default=r"C:\Users\_s2520798\Documents\1.研究\動画編集python\models\yolox_l.onnx")
+    ap.add_argument("--pose",  default=r"C:\Users\_s2520798\Documents\1.研究\動画編集python\models\dw-ll_ucoco_384.onnx")
 
     # 出力先
-    ap.add_argument("--out",       default=r"C:\Users\tomoh\Documents\2.筑波M1\1.研究\1.研究の出力結果", help="PNG/動画の出力フォルダ")
+    ap.add_argument("--out",       default=r"C:\Users\_s2520798\Documents", help="PNG/動画の出力フォルダ")
     ap.add_argument("--out_video", default=None, help="出力動画のフルパス（未指定なら out/pose_out1.mp4）")
 
     # 表示・保存オプション ←★これが無いと AttributeError
@@ -310,7 +310,7 @@ def main():
     ap.add_argument("--beta",       type=float, default=1,   help="OneEuroFilter: beta (大きいほど高速な動きに追従)")
 
     # 生徒画像のパス
-    ap.add_argument("--student",  default=r"C:\Users\tomoh\Documents\2.筑波M1\1.研究\1.研究の出力結果\UedaB_W2.png", help="生徒画像のパス")
+    ap.add_argument("--student",  default=r"C:\Users\_s2520798\Documents\UedaB_W3.png", help="生徒画像のパス")
 
 
 
@@ -333,8 +333,8 @@ def main():
         if student_img is not None:
             s_boxes, s_scores = det.infer_person_boxes(student_img,conf_thr=args.conf,iou_thr=args.iou)
 
-            if len(s_box) > 0:
-                s_areas = (s_boc[:,2] - s_boxes[:,0]) * (s_boxes[:,3] - s_boxes[:,1])
+            if len(s_boxes) > 0:
+                s_areas = (s_boxes[:,2] - s_boxes[:,0]) * (s_boxes[:,3] - s_boxes[:,1])
                 s_best_idx = np.argmax(s_areas)
                 s_box = s_boxes[s_best_idx]
                 ref_keypoints = pose.infer_keypoints133(student_img,s_box)
@@ -429,8 +429,13 @@ def main():
             smoothed_keypoints[kp_idx] = [smoothed_x, smoothed_y, conf]
 
         mixed_keypoints = smoothed_keypoints.copy()
-        if ref_keypoints is not Nonse:
+        if ref_keypoints is not None:
             mixed_keypoints = swap_face_geometry(ref_keypoints,smoothed_keypoints)
+
+        # for kp in smoothed_keypoints[23:91]:
+        #     if kp[2] > 0.3:
+        #         x,y = int(kp[0]*w),int(kp[1]*h)
+        #         cv2.circle(canvas,(x,y),2,(100,100,100),-1)
 
         # 3) 骨格の描画
         canvas = draw_skeleton_hybrid(canvas, mixed_keypoints, conf_threshold=0.3)
